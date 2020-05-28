@@ -327,6 +327,27 @@ class AccountController extends Controller
 		return view('account.follow-requests', compact('followers'));
 	}
 
+	public function followRequestsJson(Request $request)
+	{
+		$pid = Auth::user()->profile_id;
+		$followers = FollowRequest::whereFollowingId($pid)->orderBy('id','desc')->whereIsRejected(0)->get();
+		$res = [
+			'count' => $followers->count(),
+			'accounts' => $followers->take(10)->map(function($a) {
+				$actor = $a->actor;
+				return [
+					'id' => $actor->id,
+					'username' => $actor->username,
+					'avatar' => $actor->avatarUrl(),
+					'url' => $actor->url(),
+					'local' => $actor->domain == null,
+					'following' => $actor->followedBy(Auth::user()->profile)
+				];
+			})
+		];
+		return response()->json($res, 200, [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES);
+	}
+
 	public function followRequestHandle(Request $request)
 	{
 		$this->validate($request, [
@@ -425,12 +446,16 @@ class AccountController extends Controller
 			}
 
 			if($request->session()->has('2fa.attempts')) {
-				$count = (int) $request->session()->has('2fa.attempts');
-				$request->session()->push('2fa.attempts', $count + 1);
+				$count = (int) $request->session()->get('2fa.attempts');
+				if($count == 3) {
+					Auth::logout();
+					return redirect('/');
+				}
+				$request->session()->put('2fa.attempts', $count + 1);
 			} else {
-				$request->session()->push('2fa.attempts', 1);
+				$request->session()->put('2fa.attempts', 1);
 			}
-			return redirect()->back()->withErrors([
+			return redirect('/i/auth/checkpoint')->withErrors([
 				'code' => 'Invalid code'
 			]);
 		}

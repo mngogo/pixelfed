@@ -265,6 +265,15 @@ Route::domain(config('pixelfed.domain.app'))->middleware(['validemail', 'twofact
         Route::get('my/story', 'StoryController@iRedirect');
         Route::get('web/profile/_/{id}', 'InternalApiController@remoteProfile');
         Route::get('web/post/_/{profileId}/{statusid}', 'InternalApiController@remoteStatus');
+
+        Route::group(['prefix' => 'import', 'middleware' => 'dangerzone'], function() {
+            Route::get('job/{uuid}/1', 'ImportController@instagramStepOne');
+            Route::post('job/{uuid}/1', 'ImportController@instagramStepOneStore');
+            Route::get('job/{uuid}/2', 'ImportController@instagramStepTwo');
+            Route::post('job/{uuid}/2', 'ImportController@instagramStepTwoStore');
+            Route::get('job/{uuid}/3', 'ImportController@instagramStepThree');
+            Route::post('job/{uuid}/3', 'ImportController@instagramStepThreeStore');
+        });
     });
 
     Route::group(['prefix' => 'account'], function () {
@@ -272,6 +281,7 @@ Route::domain(config('pixelfed.domain.app'))->middleware(['validemail', 'twofact
         Route::get('activity', 'AccountController@notifications')->name('notifications');
         Route::get('follow-requests', 'AccountController@followRequests')->name('follow-requests');
         Route::post('follow-requests', 'AccountController@followRequestHandle');
+        Route::get('follow-requests.json', 'AccountController@followRequestsJson');
     });
 
     Route::group(['prefix' => 'settings'], function () {
@@ -361,6 +371,16 @@ Route::domain(config('pixelfed.domain.app'))->middleware(['validemail', 'twofact
         Route::get('invites', 'UserInviteController@show')->name('settings.invites');
         // Route::get('sponsor', 'SettingsController@sponsor')->name('settings.sponsor');
         // Route::post('sponsor', 'SettingsController@sponsorStore');
+        Route::prefix('import')->group(function() {
+          Route::get('/', 'SettingsController@dataImport')->name('settings.import');
+          Route::prefix('instagram')->group(function() {
+            Route::get('/', 'ImportController@instagram')->name('settings.import.ig');
+            Route::post('/', 'ImportController@instagramStart');
+          });
+          Route::prefix('mastodon')->group(function() {
+            Route::get('/', 'ImportController@mastodon')->name('settings.import.mastodon');
+          });
+        });
     });
 
     Route::group(['prefix' => 'site'], function () {
@@ -427,5 +447,6 @@ Route::domain(config('pixelfed.domain.app'))->middleware(['validemail', 'twofact
     Route::get('p/{username}/{id}.json', 'StatusController@showObject');
     Route::get('p/{username}/{id}', 'StatusController@show');
     Route::get('{username}/embed', 'ProfileController@embed');
+    Route::get('@{username}', 'SiteController@legacyProfileRedirect');
     Route::get('{username}', 'ProfileController@show');
 });

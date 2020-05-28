@@ -2,14 +2,16 @@
 
 use Illuminate\Http\Request;
 
-$middleware = ['auth:api','twofactor','validemail','localization'];
+$middleware = ['auth:api','twofactor','validemail','localization', 'throttle:60,1'];
 
 Route::post('/users/{username}/inbox', 'FederationController@userInbox');
 
 Route::group(['prefix' => 'api'], function() use($middleware) {
+
 	Route::group(['prefix' => 'v1'], function() use($middleware) {
 		Route::post('apps', 'Api\ApiV1Controller@apps');
 		Route::get('instance', 'Api\ApiV1Controller@instance');
+		Route::get('bookmarks', 'Api\ApiV1Controller@bookmarks')->middleware($middleware);
 		
 		Route::get('accounts/verify_credentials', 'Api\ApiV1Controller@verifyCredentials')->middleware($middleware);
 		Route::patch('accounts/update_credentials', 'Api\ApiV1Controller@accountUpdateCredentials')->middleware($middleware);
@@ -28,7 +30,7 @@ Route::group(['prefix' => 'api'], function() use($middleware) {
 		Route::post('accounts/{id}/unmute', 'Api\ApiV1Controller@accountUnmuteById')->middleware($middleware);
 		Route::get('accounts/{id}/lists', 'Api\ApiV1Controller@accountListsById')->middleware($middleware);
 		Route::get('lists/{id}/accounts', 'Api\ApiV1Controller@accountListsById')->middleware($middleware);
-		Route::get('accounts/{id}', 'Api\ApiV1Controller@accountById')->middleware($middleware);
+		Route::get('accounts/{id}', 'Api\ApiV1Controller@accountById');
 
 		Route::post('avatar/update', 'ApiController@avatarUpdate')->middleware($middleware);
 		Route::get('blocks', 'Api\ApiV1Controller@accountBlocks')->middleware($middleware);
@@ -58,6 +60,8 @@ Route::group(['prefix' => 'api'], function() use($middleware) {
 		Route::get('statuses/{id}/favourited_by', 'Api\ApiV1Controller@statusFavouritedBy')->middleware($middleware);
 		Route::post('statuses/{id}/reblog', 'Api\ApiV1Controller@statusShare')->middleware($middleware);
 		Route::post('statuses/{id}/unreblog', 'Api\ApiV1Controller@statusUnshare')->middleware($middleware);
+		Route::post('statuses/{id}/bookmark', 'Api\ApiV1Controller@bookmarkStatus')->middleware($middleware);
+		Route::post('statuses/{id}/unbookmark', 'Api\ApiV1Controller@unbookmarkStatus')->middleware($middleware);
 		Route::delete('statuses/{id}', 'Api\ApiV1Controller@statusDelete')->middleware($middleware);
 		Route::get('statuses/{id}', 'Api\ApiV1Controller@statusById')->middleware($middleware);
 		Route::post('statuses', 'Api\ApiV1Controller@statusCreate')->middleware($middleware)->middleware('throttle:maxPostsPerHour,60')->middleware('throttle:maxPostsPerDay,1440');
@@ -67,18 +71,19 @@ Route::group(['prefix' => 'api'], function() use($middleware) {
 		Route::get('timelines/public', 'Api\ApiV1Controller@timelinePublic');
 		Route::get('timelines/tag/{hashtag}', 'Api\ApiV1Controller@timelineHashtag')->middleware($middleware);
 	});
-    Route::group(['prefix' => 'stories'], function () use($middleware) {
-    	Route::get('v1/me', 'StoryController@apiV1Me');
-        Route::get('v1/recent', 'StoryController@apiV1Recent');
-        Route::post('v1/add', 'StoryController@apiV1Add')->middleware(array_merge($middleware, ['throttle:maxStoriesPerDay,1440']));
-        Route::get('v1/item/{id}', 'StoryController@apiV1Item');
-        Route::get('v1/fetch/{id}', 'StoryController@apiV1Fetch');
-        Route::get('v1/profile/{id}', 'StoryController@apiV1Profile');
-        Route::get('v1/exists/{id}', 'StoryController@apiV1Exists');
-        Route::delete('v1/delete/{id}', 'StoryController@apiV1Delete')->middleware(array_merge($middleware, ['throttle:maxStoryDeletePerDay,1440']));
-        Route::post('v1/viewed', 'StoryController@apiV1Viewed');
-    });
-    Route::group(['prefix' => 'v2'], function() use($middleware) {
-    	Route::get('search', 'Api\ApiV1Controller@searchV2')->middleware($middleware);
-    });
+	Route::group(['prefix' => 'stories'], function () use($middleware) {
+		Route::get('v1/me', 'StoryController@apiV1Me');
+		Route::get('v1/recent', 'StoryController@apiV1Recent');
+		Route::post('v1/add', 'StoryController@apiV1Add')->middleware(array_merge($middleware, ['throttle:maxStoriesPerDay,1440']));
+		Route::get('v1/item/{id}', 'StoryController@apiV1Item');
+		Route::get('v1/fetch/{id}', 'StoryController@apiV1Fetch');
+		Route::get('v1/profile/{id}', 'StoryController@apiV1Profile');
+		Route::get('v1/exists/{id}', 'StoryController@apiV1Exists');
+		Route::delete('v1/delete/{id}', 'StoryController@apiV1Delete')->middleware(array_merge($middleware, ['throttle:maxStoryDeletePerDay,1440']));
+		Route::post('v1/viewed', 'StoryController@apiV1Viewed');
+	});
+	Route::group(['prefix' => 'v2'], function() use($middleware) {
+		Route::get('search', 'Api\ApiV1Controller@searchV2')->middleware($middleware);
+	});
+
 });

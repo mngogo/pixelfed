@@ -181,9 +181,11 @@ class Helpers {
 
 	public static function zttpUserAgent()
 	{
+		$version = config('pixelfed.version');
+		$url = config('app.url');
 		return [
 			'Accept'     => 'application/activity+json',
-			'User-Agent' => 'PixelfedBot - https://pixelfed.org',
+			'User-Agent' => "(Pixelfed/{$version}; +{$url})",
 		];
 	}
 
@@ -236,10 +238,6 @@ class Helpers {
 				$activity = ['object' => $res];
 			}
 
-			if(isset($res['content']) == false) {
-				abort(400, 'Invalid object');
-			}
-
 			$scope = 'private';
 			
 			$cw = isset($res['sensitive']) ? (bool) $res['sensitive'] : false;
@@ -290,7 +288,7 @@ class Helpers {
 			if(!self::validateUrl($res['id']) ||
 			   !self::validateUrl($activity['object']['attributedTo'])
 			) {
-				abort(400, 'Invalid object url');
+				return;
 			}
 
 			$idDomain = parse_url($res['id'], PHP_URL_HOST);
@@ -302,7 +300,7 @@ class Helpers {
 				$actorDomain !== $urlDomain || 
 				$idDomain !== $actorDomain
 			) {
-				abort(400, 'Invalid object');
+				return;
 			}
 
 			$profile = self::profileFirstOrNew($activity['object']['attributedTo']);
@@ -402,7 +400,10 @@ class Helpers {
 			return;
 		}
 		$domain = parse_url($res['id'], PHP_URL_HOST);
-		$username = (string) Purify::clean($res['preferredUsername']);
+		if(!isset($res['preferredUsername']) && !isset($res['nickname'])) {
+			return;
+		}
+		$username = (string) Purify::clean($res['preferredUsername'] ?? $res['nickname']);
 		if(empty($username)) {
 			return;
 		}
@@ -416,7 +417,7 @@ class Helpers {
 		if(!$profile) {
 			$profile = new Profile();
 			$profile->domain = strtolower($domain);
-			$profile->username = strtolower(Purify::clean($remoteUsername));
+			$profile->username = strtolower(Purify::clean($webfinger));
 			$profile->name = isset($res['name']) ? Purify::clean($res['name']) : 'user';
 			$profile->bio = isset($res['summary']) ? Purify::clean($res['summary']) : null;
 			$profile->sharedInbox = isset($res['endpoints']) && isset($res['endpoints']['sharedInbox']) ? $res['endpoints']['sharedInbox'] : null;

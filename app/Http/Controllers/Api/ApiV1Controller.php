@@ -10,6 +10,7 @@ use App\Util\Media\Filter;
 use Laravel\Passport\Passport;
 use Auth, Cache, DB, URL;
 use App\{
+    Bookmark,
     Follower,
     FollowRequest,
     Like,
@@ -1851,6 +1852,105 @@ class ApiV1Controller extends Controller
 
         // todo
         $res = [];
+        return response()->json($res);
+    }
+
+    /**
+     * GET /api/v1/bookmarks
+     *
+     *
+     *
+     * @return StatusTransformer
+     */
+    public function bookmarks(Request $request)
+    {
+        abort_if(!$request->user(), 403);
+
+        $this->validate($request, [
+            'limit' => 'nullable|integer|min:1|max:40',
+            'max_id' => 'nullable|integer|min:0',
+            'since_id' => 'nullable|integer|min:0',
+            'min_id' => 'nullable|integer|min:0'
+        ]);
+
+        $pid = $request->user()->profile_id;
+        $limit = $request->input('limit') ?? 20;
+        $max_id = $request->input('max_id');
+        $since_id = $request->input('since_id');
+        $min_id = $request->input('min_id');
+
+        $dir = $min_id ? '>' : '<';
+        $id = $min_id ?? $max_id;
+
+        if($id) {
+            $bookmarks = Bookmark::whereProfileId($pid)
+                ->where('status_id', $dir, $id)
+                ->limit($limit)
+                ->pluck('status_id');
+        } else {
+            $bookmarks = Bookmark::whereProfileId($pid)
+                ->latest()
+                ->limit($limit)
+                ->pluck('status_id');
+        }
+
+        $res = [];
+        foreach($bookmarks as $id) {
+            $res[] = \App\Services\StatusService::get($id);
+        }
+        return response()->json($res, 200, [], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * POST /api/v1/statuses/{id}/bookmark
+     *
+     *
+     *
+     * @return StatusTransformer
+     */
+    public function bookmarkStatus(Request $request, $id)
+    {
+        abort_if(!$request->user(), 403);
+
+        $status = Status::whereNull('uri')
+            ->whereScope('public')
+            ->findOrFail($id);
+
+        Bookmark::firstOrCreate([
+            'status_id' => $status->id,
+            'profile_id' => $request->user()->profile_id
+        ]);
+        $resource = new Fractal\Resource\Item($status, new StatusTransformer());
+        $res = $this->fractal->createData($resource)->toArray();
+        return response()->json($res);
+    }
+
+    /**
+     * POST /api/v1/statuses/{id}/unbookmark
+     *
+     *
+     *
+     * @return StatusTransformer
+     */
+    public function unbookmarkStatus(Request $request, $id)
+    {
+        abort_if(!$request->user(), 403);
+
+        $status = Status::whereNull('uri')
+            ->whereScope('public')
+            ->findOrFail($id);
+
+        Bookmark::firstOrCreate([
+            'status_id' => $status->id,
+            'profile_id' => $request->user()->profile_id
+        ]);
+        $bookmark = Bookmark::whereStatusId($status->id)
+            ->whereProfileId($request->user()->profile_id)
+            ->firstOrFail();
+        $bookmark->delete();
+
+        $resource = new Fractal\Resource\Item($status, new StatusTransformer());
+        $res = $this->fractal->createData($resource)->toArray();
         return response()->json($res);
     }
 

@@ -18,10 +18,11 @@ use App\Util\ActivityPub\Helpers;
 use App\Jobs\LikePipeline\LikePipeline;
 use App\Jobs\FollowPipeline\FollowPipeline;
 
-use App\Util\ActivityPub\Validator\{
-    Accept,
-    Follow
-};
+use App\Util\ActivityPub\Validator\Accept as AcceptValidator;
+use App\Util\ActivityPub\Validator\Announce as AnnounceValidator;
+use App\Util\ActivityPub\Validator\Follow as FollowValidator;
+use App\Util\ActivityPub\Validator\Like as LikeValidator;
+use App\Util\ActivityPub\Validator\UndoFollow as UndoFollowValidator;
 
 class Inbox
 {
@@ -40,6 +41,16 @@ class Inbox
     public function handle()
     {
         $this->handleVerb();
+
+        // if(!Activity::where('data->id', $this->payload['id'])->exists()) {
+        //     (new Activity())->create([
+        //         'to_id' => $this->profile->id,
+        //         'data' => json_encode($this->payload)
+        //     ]);
+        // }
+
+        return;
+
     }
 
     public function handleVerb()
@@ -51,15 +62,17 @@ class Inbox
                 break;
 
             case 'Follow':
+                if(FollowValidator::validate($this->payload) == false) { return; }
                 $this->handleFollowActivity();
                 break;
 
             case 'Announce':
+                if(AnnounceValidator::validate($this->payload) == false) { return; }
                 $this->handleAnnounceActivity();
                 break;
 
             case 'Accept':
-                if(Accept::validate($this->payload) == false) { return; }
+                if(AcceptValidator::validate($this->payload) == false) { return; }
                 $this->handleAcceptActivity();
                 break;
 
@@ -68,6 +81,7 @@ class Inbox
                 break;
 
             case 'Like':
+                if(LikeValidator::validate($this->payload) == false) { return; }
                 $this->handleLikeActivity();
                 break;
 
@@ -159,36 +173,33 @@ class Inbox
     public function handleFollowActivity()
     {
         $actor = $this->actorFirstOrCreate($this->payload['actor']);
-        if(!$actor || $actor->domain == null) {
+        $target = $this->profile;
+        if(!$actor || $actor->domain == null || $target->domain !== null) {
             return;
         }
-        $target = $this->profile;
+        if(
+            Follower::whereProfileId($actor->id)
+                ->whereFollowingId($target->id)
+                ->exists() ||
+            FollowRequest::whereFollowerId($actor->id)
+                ->whereFollowingId($target->id)
+                ->exists()
+        ) {
+            return;
+        }
         if($target->is_private == true) {
-            // make follow request
             FollowRequest::firstOrCreate([
                 'follower_id' => $actor->id,
                 'following_id' => $target->id
             ]);
-            // todo: send notification
         } else {
-            // store new follower
-            $follower = Follower::firstOrCreate([
-                'profile_id' => $actor->id,
-                'following_id' => $target->id,
-                'local_profile' => empty($actor->domain)
-            ]);
-            if($follower->wasRecentlyCreated == true && $target->domain == null) {
-                // send notification
-                Notification::firstOrCreate([
-                    'profile_id' => $target->id,
-                    'actor_id' => $actor->id,
-                    'action' => 'follow',
-                    'message' => $follower->toText(),
-                    'rendered' => $follower->toHtml(),
-                    'item_id' => $target->id,
-                    'item_type' => 'App\Profile'
-                ]);
-            }
+            $follower = new Follower;
+            $follower->profile_id = $actor->id;
+            $follower->following_id = $target->id;
+            $follower->local_profile = empty($actor->domain);
+            $follower->save();
+
+            FollowPipeline::dispatch($follower);
 
             // send Accept to remote profile
             $accept = [
@@ -289,13 +300,14 @@ class Inbox
         if(!isset(
             $this->payload['actor'], 
             $this->payload['object'], 
-            $this->payload['object']['id'],
-            $this->payload['object']['type']
         )) {
             return;
         }
         $actor = $this->payload['actor'];
         $obj = $this->payload['object'];
+        if(is_string($obj) == true) {
+            return;
+        }
         $type = $this->payload['object']['type'];
         $typeCheck = in_array($type, ['Person', 'Tombstone']);
         if(!Helpers::validateUrl($actor) || !Helpers::validateUrl($obj['id']) || !$typeCheck) {
@@ -307,6 +319,8 @@ class Inbox
         $id = $this->payload['object']['id'];
         switch ($type) {
             case 'Person':
+                    // todo: fix race condition
+                    return; 
                     $profile = Helpers::profileFetch($actor);
                     if(!$profile || $profile->private_key != null) {
                         return;
@@ -423,6 +437,12 @@ class Inbox
                 Follower::whereProfileId($profile->id)
                     ->whereFollowingId($following->id)
                     ->delete();
+                Notification::whereProfileId($following->id)
+                    ->whereActorId($profile->id)
+                    ->whereAction('follow')
+                    ->whereItemId($following->id)
+                    ->whereItemType('App\Profile')
+                    ->forceDelete();
                 break;
                 
             case 'Like':
